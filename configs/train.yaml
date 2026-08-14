@@ -1,0 +1,49 @@
+# AIRIS-Net Training Configuration
+
+# Model Architecture
+model:
+  in_channels: 1
+  base_channels: 48
+  degradation_dim: 64
+  use_local_expert: true
+  use_global_expert: true
+  use_frequency_expert: true
+  use_adaptive_routing: true
+  use_integrity_mask: true
+
+# Dataset
+data:
+  train_dir: "data/train/clean"
+  val_dir: "data/val/clean"
+  test_dir: "data/test/clean"
+  patch_size: 128
+  grayscale: true
+  degradation_mode: "random"
+
+# Training Hyperparameters
+training:
+  epochs: 50
+  batch_size: 8
+  learning_rate: 0.00035
+  weight_decay: 0.00005
+  gradient_clip: 1.0
+  num_workers: 0 # set to 0 for Windows stability
+  save_every: 2
+  validate_every: 1
+
+# Loss Weights
+loss:
+  w_char: 1.5
+  w_edge: 0.3
+  w_ssim: 0.8
+  w_freq: 0.1
+  w_identity: 0.01
+  w_mask: 0.05
+  w_reliability: 0.05
+  k_reliability: 10.0
+
+# Paths
+paths:
+  checkpoint_dir: "checkpoints"
+  output_dir: "outputs"
+  results_dir: "results"

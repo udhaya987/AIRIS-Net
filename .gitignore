@@ -1,0 +1,62 @@
+# Python & Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Model Checkpoints & Pretrained Weights
+checkpoints/*
+!checkpoints/.gitkeep
+*.pth
+*.pt
+*.ckpt
+
+# Generated Outputs & Temporary Results
+outputs/*
+!outputs/.gitkeep
+results/*
+!results/.gitkeep
+results.csv
+
+# Semiconductor Datasets & Large Binary Arrays
+data/train/clean/*
+!data/train/clean/.gitkeep
+data/val/clean/*
+!data/val/clean/.gitkeep
+data/test/clean/*
+!data/test/clean/.gitkeep
+/train/
+/Test_NoisyLR/
+*.npy
+
+# External / Third-party Baseline Sub-repositories
+SwinIR/
+
+# OS Artifacts
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+
+# Secrets & Credentials
+.env
+.env.*
+*.key
+*.pem
+*.secret
+*.token
+
+# IDE & Editor Settings
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
