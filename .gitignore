@@ -10,8 +10,6 @@ __pycache__/
 .ipynb_checkpoints/
 
 # Checkpoints Strategy:
-# Lightweight reproducibility checkpoints may be tracked or released via GitHub Releases.
-# Ignore intermediate training checkpoints while tracking best_airis.pth / .gitkeep
 checkpoints/airis_epoch_*.pth
 checkpoints/cpu_test.pth
 checkpoints/latest_airis.pth
@@ -22,6 +20,7 @@ outputs/*
 outputs/sanity_test/*
 sample_results/restored/*
 !sample_results/restored/.gitkeep
+/results.csv
 
 # Semiconductor Datasets & Large Binary Arrays
 data/train/clean/*

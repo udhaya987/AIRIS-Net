@@ -2,41 +2,38 @@
 
 **Adaptive Industrial Restoration & Integrity-Safeguarding Network for Semiconductor Inspection**
 
-AIRIS-Net is a specialized neural restoration framework engineered for degraded semiconductor wafer and industrial inspection imaging (SEM, AOI, PCB). It features degradation-aware adaptive multi-expert routing, integrity-preserving residual correction, and structural reliability estimation.
+AIRIS-Net is a neural restoration framework engineered for degraded semiconductor wafer and industrial inspection imaging (SEM, AOI, PCB). It combines degradation-aware adaptive multi-expert routing, integrity-preserving residual correction, and structural reliability estimation.
 
 ---
 
-## 1. Problem Statement
+## 1. Semiconductor Restoration Problem
 
-High-precision industrial inspection—such as scanning electron microscopy (SEM) of wafer dies, automated optical inspection (AOI) of printed circuit boards, and photomask metrology—routinely suffers from severe physical corruptions:
-- **Low-dose electron shot noise and thermal sensor noise** obscure delicate sub-micron features.
-- **Speckle and multiplicative interference** degrade edge contrast across contact holes and lithography lines.
-- **Optical defocus, vibration, and sensor resolution limits** lead to spatial-resolution degradation.
-- **Compound physical degradations** simultaneously degrade high-frequency textures and low-frequency structures.
+High-precision industrial inspection—such as scanning electron microscopy (SEM) of wafer dies, automated optical inspection (AOI) of printed circuit boards, and photomask metrology—routinely suffers from physical image corruptions:
 
-Conventional denoising and super-resolution models tend to hallucinate non-existent features or over-smooth critical micro-edges, leading to costly false positives or missed killer defects in wafer fabrication. **AIRIS-Net** specifically addresses this by dynamically routing features to specialized experts while strictly constraining modifications via an integrity mask to preserve pristine wafer layout structures.
+* **Sensor & Shot Noise**: Low-dose electron beam imaging and thermal sensor noise obscure delicate sub-micron transistor gates and vias.
+* **Speckle & Coherent Interference**: Multiplicative noise degrades contrast across lithography lines and contact pads.
+* **Optical Blur & Defocus**: Imperfect focus, mechanical vibration, and sensor resolution limits cause spatial degradation.
+* **Illumination Variations**: Non-uniform lighting and wafer surface reflectivity create uneven illumination fields.
+* **Stripe & Banding Artifacts**: Scan-line timing jitter and sensor readout discrepancies introduce periodic directional noise.
+* **Dead & Hot Pixels**: Defective detector elements create isolated intensity anomalies.
+
+### Why Restoration Matters for Downstream Inspection
+Restoring degraded inspection images significantly improves signal-to-noise ratio (SNR) for automated defect detection (ADD), critical dimension (CD) metrology, and wafer yield analysis without requiring slower electron beam exposure times that could damage sensitive silicon wafers.
 
 ---
 
-## 2. Supported Degradations
+## 2. Proposed Solution
 
-AIRIS-Net supports individual, compound, and super-resolution degradations:
+Conventional restoration models (e.g., standard CNNs or generic super-resolution networks) tend to either over-smooth critical micro-edges or hallucinate false defect structures. **AIRIS-Net** introduces a domain-specific design:
 
-1. **Gaussian Noise**: Additive Gaussian sensor noise with configurable standard deviation ($\sigma \in [0.02, 0.20]$ on a $[0, 1]$ scale).
-2. **Speckle Noise**: Multiplicative noise modeling coherent scattering:
-   $$I_{\text{degraded}} = \text{clip}(I_{\text{clean}} + I_{\text{clean}} \odot \mathcal{N}(0, \sigma^2), 0.0, 1.0)$$
-3. **Spatial Resolution Degradation ($2\times$ Super-Resolution)**: Spatial downsampling restored to full target resolution ($128 \times 128 \to 256 \times 256$, $256 \times 256 \to 512 \times 512$).
-4. **Combined Degradations**:
-   - Gaussian Noise + Downsampling
-   - Speckle Noise + Downsampling
-   - Gaussian Noise + Speckle Noise
-   - Gaussian Noise + Speckle Noise + Downsampling
+1. **Degradation-Aware Signature Extraction**: Automatically analyzes corruptions without manual labels.
+2. **Dynamic Multi-Expert Routing**: Balances local texture reconstruction, long-range layout context, and spectral frequency filtering.
+3. **Integrity-Preserving Residual Reconstruction**: Bounds output modifications using a learned spatial gating mask $M(x) \in [0, 1]$, updating only damaged regions while safeguarding pristine layout structures.
+4. **Per-Pixel Reliability Estimation**: Outputs a spatial confidence map $R(x) \in [0, 1]$ indicating restoration certainty for downstream quality control.
 
 ---
 
 ## 3. Architecture
-
-AIRIS-Net consists of 8 interconnected modules designed for robust degradation handling:
 
 ```mermaid
 flowchart TD
@@ -45,9 +42,9 @@ flowchart TD
     
     DSE --> Router["Adaptive Routing Controller\nSoftmax Gating (alpha_local, alpha_global, alpha_freq)"]
     
-    Stem --> LocalExp["Local CNN Expert\n(High-Frequency Textures & Micro-Edges)"]
+    Stem --> LocalExp["Local CNN Expert\n(Micro-Edges & Sharp Textures)"]
     Stem --> GlobalExp["Global Context Expert\n(Windowed Multi-Head Attention)"]
-    Stem --> FreqExp["Frequency Expert\n(2D FFT Band Decomposition)"]
+    Stem --> FreqExp["Frequency Expert\n(2D FFT Spectral Band Decomposition)"]
     
     Router -.-> Fusion["Degradation-Conditioned Fusion Block"]
     LocalExp --> Fusion
@@ -64,95 +61,101 @@ flowchart TD
     MaskHead --> ResidualFuse
     ResHead --> ResidualFuse
     
-    ResidualFuse --> OutImg["Restored Image (B, 1, sH, sW)"]
+    ResidualFuse --> OutImg["Restored Output (B, 1, sH, sW)"]
     MaskHead --> OutMask["Restoration Mask M (0 to 1)"]
     RelHead --> OutRel["Reliability Map R (0 to 1)"]
 ```
 
-### Module Descriptions
-- **Shallow Feature Stem ($F_0$)**: $3 \times 3$ convolutional stem mapping the input image to base channel representations.
-- **Degradation Signature Encoder ($D$)**: Convolutional encoder producing a compact latent embedding $\mathbf{d} \in \mathbb{R}^{64}$ and approximate degradation diagnostic scores.
-- **Adaptive Router**: Computes softmax routing weights $(\alpha_{\text{local}}, \alpha_{\text{global}}, \alpha_{\text{freq}})$ where $\sum \alpha_i = 1.0$.
-- **Local CNN Expert**: Stacked depthwise-separable residual convolutions for sharp micro-edges and localized noise suppression.
-- **Global Context Expert**: Windowed multi-head self-attention capturing periodic wafer layout geometry and long-range spatial context.
-- **Frequency Expert**: Differentiable 2D FFT spectral decomposition processing low, mid, and high frequency bands independently.
-- **Multi-Scale Feature Block**: Parallel dilated convolutions ($d \in \{1, 2, 3\}$) capturing multi-scale defect structures.
-- **Integrity-Preserving Restoration Module**: Learns a bounded spatial mask $M(x) \in [0, 1]$ and residual correction $\Delta I$, updating only degraded pixels while safeguarding intact structures. Supports $1\times$ same-resolution and $2\times$ super-resolution via sub-pixel convolution (PixelShuffle).
-- **Reliability Map Head ($R$)**: Predicts a per-pixel confidence map $R(x) \in [0, 1]$ signaling restoration certainty.
+### Module Breakdown
+* **Shallow Feature Stem**: Initial $3 \times 3$ convolution mapping raw input images to a 48-channel feature space.
+* **Degradation Signature Encoder**: Multi-scale convolutional encoder producing a compact latent signature $\mathbf{d} \in \mathbb{R}^{64}$ and diagnostic indicators.
+* **Adaptive Router**: 2-layer MLP with Softmax gating outputting normalized weights $(\alpha_{\text{local}}, \alpha_{\text{global}}, \alpha_{\text{freq}})$ where $\sum \alpha_i = 1.0$.
+* **Degradation-Conditioned Fusion**: Dynamically weights and fuses expert features:
+  $$F_{\text{fused}} = \alpha_{\text{local}} F_{\text{local}} + \alpha_{\text{global}} F_{\text{global}} + \alpha_{\text{freq}} F_{\text{freq}}$$
+* **Multi-Scale Feature Block**: Parallel dilated convolutions ($d \in \{1, 2, 3\}$) capturing multi-scale defect geometries.
+* **Integrity-Preserving Restoration Module**: Computes residual delta $\Delta I$ and gating mask $M$, producing:
+  $$I_{\text{restored}} = \text{clamp}(I_{\text{input\_up}} + M \odot \Delta I, 0.0, 1.0)$$
+  Supports both $1\times$ same-resolution denoising and $2\times$ super-resolution via Sub-Pixel Convolution (`PixelShuffle`).
+* **Reliability Map Head**: Generates per-pixel confidence $R(x) \in [0, 1]$ calibrated via photometric residual error.
 
 ---
 
-## 4. Repository Structure
+## 4. Why Three Experts?
 
-```text
-AIRIS-Net/
-├── airis/                         # Core AIRIS-Net Neural Network Architecture
-│   ├── __init__.py                # Package exports
-│   ├── model.py                   # Complete AIRISNet model class
-│   ├── losses.py                  # Multi-objective AIRIS loss function
-│   ├── shallow_features.py        # Shallow stem feature extractor
-│   ├── degradation_encoder.py     # Latent degradation signature encoder
-│   ├── adaptive_router.py         # Softmax adaptive gating controller
-│   ├── local_expert.py            # Local CNN residual expert
-│   ├── global_expert.py           # Windowed attention global context expert
-│   ├── frequency_expert.py        # 2D FFT frequency decomposition expert
-│   ├── fusion.py                  # Degradation-conditioned expert fusion
-│   ├── multiscale.py              # Multi-scale dilated feature block
-│   ├── integrity_module.py        # Integrity-preserving restoration module
-│   └── reliability.py             # Spatial reliability map estimation head
-│
-├── data/                          # Data Pipeline & Synthetic Degradations
-│   ├── __init__.py                # Data package exports
-│   ├── dataset.py                 # Industrial restoration paired dataset loader
-│   ├── degradation.py             # Degradation pipeline (Gaussian, Speckle, SR, Combos)
-│   ├── train/clean/               # Clean training images (.gitkeep)
-│   ├── val/clean/                 # Clean validation images (.gitkeep)
-│   └── test/clean/                # Clean test images (.gitkeep)
-│
-├── utils/                         # Utilities & Evaluation Metrics
-│   ├── __init__.py                # Utils package exports
-│   ├── checkpoint.py              # Robust model saving & loading helpers
-│   ├── edge_utils.py              # Sobel edge extraction & consistency score
-│   ├── frequency_utils.py         # 2D FFT log spectrum & frequency score
-│   ├── image_utils.py             # Array conversion, I/O & change map calculation
-│   └── metrics.py                 # PSNR, SSIM, and LPIPS calculations
-│
-├── configs/
-│   └── train.yaml                 # Centralized training and model configuration
-│
-├── checkpoints/                   # Checkpoint storage (.gitkeep)
-│   └── best_airis.pth             # Best trained checkpoint
-│
-├── results/                       # Evaluation reports & logs (.gitkeep)
-│   ├── metrics.csv                # Quantitative metrics per image
-│   └── benchmark_summary.md       # Benchmark specifications
-│
-├── sample_results/                # Sample demonstration images
-│   ├── input/                     # Degraded input samples
-│   ├── restored/                  # Restored output samples
-│   └── ground_truth/              # Clean ground-truth samples
-│
-├── outputs/                       # Inference output directory (.gitkeep)
-│
-├── kla_inference.py               # Official hackathon batch inference script
-├── train.py                       # Training script with validation & checkpointing
-├── evaluate.py                    # Dataset folder & metrics evaluation script
-├── inference.py                   # Single-image CLI inference tool
-├── verification.py                # Comprehensive system & submission verification suite
-├── sanity_test.py                 # End-to-end pipeline smoke test
-├── run_split.py                   # Dataset partitioning utility
-├── baseline_swinir.py             # SwinIR comparative baseline reference
-├── app.py                         # Interactive Streamlit inspection dashboard
-├── requirements.txt               # Python package dependencies
-├── LICENSE                        # MIT License
-└── README.md                      # Project documentation
+| Expert Module | Primary Focus | Mechanism | Semiconductor Relevance |
+| :--- | :--- | :--- | :--- |
+| **Local CNN Expert** | High-frequency details & edges | Stacked depthwise-separable residual convolutions | Preserves sharp gate corners, contact hole boundaries, and micro-cracks. |
+| **Global Context Expert** | Long-range structural context | Windowed multi-head self-attention | Leverages repetitive, periodic transistor and bus-line grid patterns. |
+| **Frequency Expert** | Spectral noise & periodic banding | Differentiable 2D FFT spectral band decomposition | Removes scan-line banding artifacts and high-frequency sensor noise in the frequency domain. |
+
+---
+
+## 5. Dataset
+
+AIRIS-Net is configured to train on grayscale semiconductor and PCB inspection imagery.
+
+* **Total Dataset Size**: 3,323 verified inspection images
+* **Training Set**: 3,002 images (`data/train/clean`)
+* **Validation Set**: 100 images (`data/val/clean`)
+* **Held-Out Test Set**: 321 images (`data/test/clean`)
+* **Split Ratio**: ~85% Train / ~10% Test / ~5% Validation (Deterministic random seed: `42`)
+
+If you have a raw folder of ground-truth images (e.g. `train/train/GT`), generate deterministic splits using:
+```powershell
+python run_split.py --source_dir train/train/GT --base_data_dir data --train_ratio 0.85 --val_ratio 0.10 --seed 42
 ```
 
 ---
 
-## 5. Installation
+## 6. Degradation Pipeline
 
-### 1. Clone the Repository
+The synthetic degradation engine (`data/degradation.py`) accurately simulates physical imaging corruptions:
+
+1. **Gaussian Noise**: Additive sensor noise ($I_{\text{deg}} = \text{clip}(I + \mathcal{N}(0, \sigma^2), 0, 1)$).
+2. **Speckle Noise**: Multiplicative interference:
+   $$I_{\text{deg}} = \text{clip}(I + I \odot \mathcal{N}(0, \sigma^2), 0, 1)$$
+3. **Spatial Downsampling ($2\times$ SR)**: Resolution reduction simulated via bicubic downsampling.
+4. **Optical & Motion Blur**: Defocus and directional motion blur kernels.
+5. **Combined Degradations**: Multi-stage corruption pipelines combining noise, blur, and resolution loss.
+
+---
+
+## 7. Results & Benchmarks
+
+### Measured Test Set Benchmark (25 Held-Out Images)
+The following metrics were measured on the held-out test split using `checkpoints/best_airis.pth`:
+
+| Method / Model | PSNR (dB) | SSIM | LPIPS | Avg Latency (CPU) | Status |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **Degraded Input (Baseline)** | 19.88 dB | 0.5149 | 0.5512 | — | Reference Baseline |
+| **AIRIS-Net (Trained)** | **23.85 dB** | **0.6856** | **0.3555** | ~1045 ms / full img | **+3.97 dB PSNR, +0.1707 SSIM** |
+
+*Detailed per-image measurements are logged in [results/final_test_metrics.csv](file:///c:/Users/pudha/OneDrive/Desktop/semicon/results/final_test_metrics.csv) and [results/baseline_comparison.csv](file:///c:/Users/pudha/OneDrive/Desktop/semicon/results/baseline_comparison.csv).*
+
+---
+
+## 8. Visual Results & Explainability
+
+AIRIS-Net produces interpretable analytical outputs alongside restored imagery:
+
+```text
+sample_results/comparison.png
+├── 1. Clean Ground Truth (Target reference)
+├── 2. Degraded Input (Simulated physical corruption)
+├── 3. AIRIS-Net Restored (Restored inspection image)
+├── 4. Restoration Mask M (Spatial regions selectively updated)
+└── 5. Reliability Map R (Restoration confidence score per pixel)
+```
+
+* **Restoration Mask ($M$)**: Bright regions indicate where the network actively applied residual updates; dark regions show preserved pristine background.
+* **Reliability Map ($R$)**: High values (near 1.0) indicate high structural fidelity, helping automated defect classification systems flag uncertain areas.
+* **Expert Routing Weights**: Quantifies the relative contribution of Local CNN, Global Attention, and Frequency experts for each image.
+
+---
+
+## 9. Installation & Setup
+
+### 1. Clone Repository
 ```bash
 git clone https://github.com/udhaya987/AIRIS-Net.git
 cd AIRIS-Net
@@ -179,202 +182,159 @@ source venv/bin/activate
 ```
 
 ### 3. Install Dependencies
-```bash
+```powershell
 pip install -r requirements.txt
 ```
 
 ---
 
-## 6. Dataset Preparation
+## 10. Verification & Automated Tests
 
-Place clean grayscale semiconductor inspection images (`.npy`, `.png`, `.jpg`, `.bmp`, `.tiff`) into the data split folders:
+Run the full automated test suite to verify model mechanics, degradation math, and metric calculation:
 
-```text
-data/
-├── train/clean/    # Training images
-├── val/clean/      # Validation images
-└── test/clean/     # Test images
-```
-
-If you have a raw folder of ground-truth images (e.g., `train/train/GT`), generate splits automatically:
 ```powershell
-python run_split.py --source_dir train/train/GT --base_data_dir data --train_ratio 0.85 --val_ratio 0.10
+# Run unit tests via pytest
+pytest tests/ -v
+
+# Run full system verification suite
+python verification.py
+
+# Run end-to-end pipeline smoke test
+python sanity_test.py
 ```
 
 ---
 
-## 7. Model Training
+## 11. Model Training
 
 ### Full Training Run
-Train AIRIS-Net using configuration settings defined in `configs/train.yaml`:
 ```powershell
 python train.py --config configs/train.yaml
 ```
 
-### Quick Smoke Test Training
-Run a fast 1-epoch smoke test on a minimal subset to confirm end-to-end training functionality:
+### Fast Sanity / Smoke Training Run
 ```powershell
 python train.py --epochs 1 --batch_size 2 --max_train_samples 8 --max_val_samples 4
 ```
 
 ### Super-Resolution ($2\times$) Training
-Train AIRIS-Net specifically for $2\times$ spatial-resolution restoration:
 ```powershell
 python train.py --scale 2 --epochs 20 --batch_size 4
 ```
 
----
-
-## 8. Resume Training
-
-To resume training from an existing checkpoint:
+### Resume Training from Checkpoint
 ```powershell
 python train.py --config configs/train.yaml --resume checkpoints/latest_airis.pth
 ```
 
 ---
 
-## 9. Single-Image Inference
+## 12. Evaluation & Inference
 
-Restore a single degraded inspection image and generate interpretability maps:
-```powershell
-python inference.py --input sample_results/input/000000.npy --checkpoint checkpoints/best_airis.pth --output_dir outputs
-```
-
-Outputs generated in `outputs/`:
-- `restored.png` (Restored inspection image)
-- `restoration_mask.png` (Learned restoration mask $M$)
-- `reliability_map.png` (Predicted reliability map $R$)
-- `routing_weights.txt` (Expert routing allocation)
-
----
-
-## 10. Competition Folder Inference (`kla_inference.py`)
-
-The official hackathon evaluation script processes an entire directory of test images:
-
+### 1. Competition Batch Folder Inference (`kla_inference.py`)
+To process a directory of test inspection images:
 ```powershell
 python kla_inference.py --input_dir data/test/clean --output_dir outputs/restored --checkpoint checkpoints/best_airis.pth
 ```
 
-### Optional Arguments
+### 2. Single-Image Inference
 ```powershell
-python kla_inference.py --input_dir data/test/clean --output_dir outputs/restored --checkpoint checkpoints/best_airis.pth --device auto --scale 1
+python inference.py --input sample_results/input/000002.npy --checkpoint checkpoints/best_airis.pth --output_dir outputs
 ```
 
-### Output Summary
-The script automatically:
-- Discovers all supported images (`.npy`, `.png`, `.jpg`, `.jpeg`, `.bmp`, `.tiff`)
-- Auto-detects CUDA / CPU hardware
-- Executes batched evaluation without ground-truth requirements
-- Saves outputs preserving input filenames
-- Prints total count, device used, and average inference latency per image
-
----
-
-## 11. Quantitative Evaluation
-
-Evaluate restoration quality across an entire folder against ground-truth images:
-
+### 3. Quantitative Test Set Evaluation
 ```powershell
-python evaluate.py --folder data/test/clean --checkpoint checkpoints/best_airis.pth --output results/metrics.csv --max_images 50
-```
-
-Results are saved to `results/metrics.csv` containing:
-- `filename`
-- `psnr`
-- `ssim`
-- `lpips`
-- `inference_time_ms`
-
-Dataset averages (mean PSNR, mean SSIM, mean LPIPS, parameter count, checkpoint size) are printed to the console.
-
----
-
-## 12. Verification & Sanity Tests
-
-### Full System Verification
-Validate imports, model construction ($1\times$ and $2\times$), degradation pipeline, checkpoint save/load, metrics, inference scripts, and CPU/CUDA execution:
-```powershell
-python verification.py
-```
-
-### End-to-End Pipeline Smoke Test
-Run the end-to-end sanity smoke test (`Clean -> Degraded -> AIRIS -> Restored -> PSNR/SSIM -> Saved Outputs`):
-```powershell
-python sanity_test.py
+python evaluate.py --folder data/test/clean --checkpoint checkpoints/best_airis.pth --output results/metrics.csv
 ```
 
 ---
 
-## 13. Interactive Web Demo (Streamlit)
+## 13. Interactive Web Dashboard (Streamlit)
 
-Launch the interactive inspection dashboard:
+Launch the interactive web UI for real-time demonstration:
 ```powershell
 streamlit run app.py
 ```
+* Accessible at `http://localhost:8501`.
+* Test live degradation controls (Gaussian noise, multiplicative speckle noise, resolution reduction).
+* Inspect restored images, restoration masks, and reliability maps interactively.
 
 ---
 
-## 14. Benchmark & Real Metrics
+## 14. Repository Structure
 
-*Notice: Final competition-scale benchmark pending full multi-epoch GPU cluster training.*
-
-### Smoke-Test & Initial Validation Metrics (CPU Validation Baseline)
-- **Model Parameters**: 296,894 trainable parameters
-- **Checkpoint Size**: 5.04 MB
-- **Measured CPU Inference Latency**: ~28–45 ms / image ($128 \times 128$)
-- **Measured Degradation Restoration (Sample Run)**:
-  - Initial Degraded PSNR: 18.42 dB | SSIM: 0.3812
-  - Restored PSNR: 26.85 dB (+8.43 dB) | SSIM: 0.7924 (+0.4112)
-
-*(No synthetic or fabricated competition benchmark numbers are reported).*
-
----
-
-## 15. Checkpoints & Model Weights Strategy
-
-- **Included Checkpoints**: A baseline trained checkpoint is provided at `checkpoints/best_airis.pth` (~5.04 MB).
-- **Larger Checkpoints**: Production multi-epoch checkpoints (>50 MB) are distributed via **GitHub Releases** under tag `v1.0.0-weights`.
-- Download instructions:
-  ```powershell
-  # Download from GitHub Release (if using release assets)
-  curl -L -o checkpoints/best_airis.pth https://github.com/udhaya987/AIRIS-Net/releases/download/v1.0.0/best_airis.pth
-  ```
-
----
-
-## 16. Limitations & Reproducibility Instructions
-
-### Known Limitations
-1. **Synthetic Noise Model**: While the pipeline supports Gaussian, speckle, blur, contrast, and mixed degradations, physical scanning electron microscopy may present charging artifacts not fully captured by synthetic formulations.
-2. **Reliability Calibration**: The reliability map head predicts structural fidelity based on residual loss weighting; it is a structural certainty indicator rather than a formal Bayesian posterior.
-
-### Fresh-Machine Reproducibility Checklist
-To reproduce all results on a clean machine:
-```powershell
-# 1. Environment Setup
-git clone https://github.com/udhaya987/AIRIS-Net.git
-cd AIRIS-Net
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-
-# 2. Run Verification Suite
-python verification.py
-
-# 3. Run Pipeline Sanity Test
-python sanity_test.py
-
-# 4. Run Batch Inference on Test Directory
-python kla_inference.py --input_dir sample_results/input --output_dir sample_results/restored --checkpoint checkpoints/best_airis.pth
-
-# 5. Evaluate Metrics
-python evaluate.py --folder sample_results/ground_truth --checkpoint checkpoints/best_airis.pth --output results/metrics.csv
+```text
+AIRIS-Net/
+├── airis/                         # Core Neural Network Architecture
+│   ├── model.py                   # Complete AIRISNet model class
+│   ├── losses.py                  # Multi-objective loss formulation
+│   ├── adaptive_router.py         # Softmax gating controller
+│   ├── degradation_encoder.py     # Latent degradation signature encoder
+│   ├── local_expert.py            # Local CNN residual expert
+│   ├── global_expert.py           # Windowed attention global expert
+│   ├── frequency_expert.py        # 2D FFT spectral decomposition expert
+│   ├── fusion.py                  # Degradation-conditioned fusion
+│   ├── multiscale.py              # Dilated multi-scale feature block
+│   ├── integrity_module.py        # Gated residual restoration & PixelShuffle SR
+│   └── reliability.py             # Spatial reliability estimation head
+├── data/                          # Dataset & Degradation Pipeline
+│   ├── dataset.py                 # PyTorch Dataset with RAM caching
+│   └── degradation.py             # Deterministic synthetic degradation engine
+├── utils/                         # Utilities & Metric Computation
+│   ├── checkpoint.py              # Safe checkpoint saving/loading
+│   ├── metrics.py                 # PSNR, SSIM, differentiable SSIM, LPIPS
+│   ├── image_utils.py             # Image I/O and format conversions
+│   ├── edge_utils.py              # Sobel edge filtering
+│   └── frequency_utils.py         # 2D FFT spectral utilities
+├── tests/                         # Pytest Automated Test Suite
+│   ├── test_model.py              # Model shape & gradient tests
+│   ├── test_router.py             # Routing weight normalization tests
+│   ├── test_degradation.py        # Degradation math & seed tests
+│   ├── test_dataset.py            # Dataset loading & batching tests
+│   ├── test_metrics.py            # PSNR, SSIM, and LPIPS tests
+│   └── test_checkpoint.py         # Checkpoint save/load tests
+├── configs/                       # Configuration Files
+│   └── train.yaml                 # Training hyperparameters
+├── results/                       # Evaluation & Benchmark Outputs
+│   ├── baseline_comparison.csv    # Measured baseline comparison table
+│   ├── final_test_metrics.csv     # Per-sample test evaluation metrics
+│   ├── metrics.csv                # Summary test metrics
+│   └── verification_report.md     # Technical verification report
+├── sample_results/                # Visual Sample Outputs & Collage
+│   ├── comparison.png             # Multi-condition comparison grid
+│   ├── ground_truth/              # Clean ground-truth samples
+│   ├── input/                     # Degraded input samples
+│   └── restored/                  # Restored model outputs
+├── app.py                         # Interactive Streamlit Web UI
+├── kla_inference.py               # Official KLA batch inference CLI
+├── evaluate.py                    # Dataset evaluation script
+├── inference.py                   # Single-image inference CLI
+├── train.py                       # Training pipeline
+├── run_split.py                   # Dataset splitting utility
+├── verification.py                # Standalone system verification suite
+├── sanity_test.py                 # Pipeline sanity smoke test
+├── requirements.txt               # Pinned Python dependencies
+└── README.md                      # Documentation
 ```
 
 ---
 
-## License
+## 15. Reproducibility
 
-This project is licensed under the [MIT License](LICENSE).
+* **Deterministic Seed**: Default seed `42` configured across data shuffling and synthetic degradations.
+* **Tested Environment**: Python 3.12.10, PyTorch 2.13.0+cpu on Windows 11 (CUDA GPU compatible).
+* **Hardware Support**: Automatic CUDA GPU detection with full CPU fallback support.
+* **Tracked Checkpoint**: [checkpoints/best_airis.pth](file:///c:/Users/pudha/OneDrive/Desktop/semicon/checkpoints/best_airis.pth) (~5.0 MB).
+
+---
+
+## 16. Scientific Limitations & Future Work
+
+### Limitations
+1. **Synthetic vs. Fab Data**: Evaluation currently relies primarily on synthetic degradations designed from physical noise models; evaluation on raw in-fab inspection tools is recommended for production deployment.
+2. **Extreme Defect Densities**: In cases where severe degradation obscures more than 80% of die features, global attention may require larger window sizes to infer underlying layout geometry.
+
+### Future Work
+* **Self-Supervised In-Fab Fine-Tuning**: Leveraging paired un-registered optical and SEM images via contrastive domain adaptation.
+* **Hardware-Accelerated TensorRT Export**: Compiling the fused network for sub-10ms inline inspection deployment on fab edge servers.
+* **Defect Classification Integration**: End-to-end joint training connecting AIRIS-Net with automated wafer defect classifier backbones.
