@@ -26,8 +26,8 @@ class AIRISNet(nn.Module):
       -> Local CNN Expert + Global Context Expert + Frequency Expert
       -> Degradation-Conditioned Feature Fusion
       -> Multi-Scale Feature Processing
-      -> Integrity-Preserving Restoration Module (Mask M, Delta I)
-      -> Reliability Map Estimation (R)
+      -> Integrity-Preserving Restoration Module (Mask M, Delta I) [with scale_factor upsampling]
+      -> Reliability Map Estimation (R) [with scale_factor upsampling]
       -> Final Restored Output
     """
     def __init__(
@@ -35,6 +35,7 @@ class AIRISNet(nn.Module):
         in_channels: int = 1,
         base_channels: int = 48,
         degradation_dim: int = 64,
+        scale_factor: int = 1,
         use_local_expert: bool = True,
         use_global_expert: bool = True,
         use_frequency_expert: bool = True,
@@ -45,6 +46,7 @@ class AIRISNet(nn.Module):
         self.in_channels = in_channels
         self.base_channels = base_channels
         self.degradation_dim = degradation_dim
+        self.scale_factor = scale_factor
 
         # Ablation switches
         self.use_local_expert = use_local_expert
@@ -80,11 +82,15 @@ class AIRISNet(nn.Module):
         self.integrity_module = IntegrityPreservingRestoration(
             in_channels=in_channels,
             base_channels=base_channels,
-            use_mask=use_integrity_mask
+            use_mask=use_integrity_mask,
+            scale_factor=scale_factor
         )
 
         # 8. Reliability Map Head
-        self.reliability_head = ReliabilityHead(base_channels=base_channels)
+        self.reliability_head = ReliabilityHead(
+            base_channels=base_channels,
+            scale_factor=scale_factor
+        )
 
     def forward(self, x: torch.Tensor) -> Dict[str, Any]:
         """
@@ -93,12 +99,13 @@ class AIRISNet(nn.Module):
             x: (B, C, H, W) normalized to [0.0, 1.0]
         Output:
             dict containing:
-                'restored': restored image tensor (B, C, H, W)
-                'mask': restoration mask (B, 1, H, W)
-                'reliability': reliability map (B, 1, H, W)
+                'restored': restored image tensor (B, C, H * scale, W * scale)
+                'mask': restoration mask (B, 1, H * scale, W * scale)
+                'reliability': reliability map (B, 1, H * scale, W * scale)
                 'routing_weights': expert weights (B, 3)
                 'degradation_embedding': latent vector D (B, degradation_dim)
                 'diagnostic_scores': approximate [noise, blur, contrast] scores (B, 3)
+                'delta': residual delta tensor (B, C, H * scale, W * scale)
         """
         B, C, H, W = x.shape
 

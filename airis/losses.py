@@ -66,8 +66,8 @@ class AIRISLoss(nn.Module):
         """
         Inputs:
             model_outputs: dict from AIRISNet forward pass
-            clean_target: (B, C, H, W)
-            degraded_input: (B, C, H, W)
+            clean_target: (B, C, H_target, W_target)
+            degraded_input: (B, C, H_in, W_in)
         Outputs:
             total_loss: scalar tensor
             loss_dict: dict of individual loss values (floats)
@@ -75,6 +75,17 @@ class AIRISLoss(nn.Module):
         restored = model_outputs["restored"]
         pred_mask = model_outputs["mask"]
         pred_rel = model_outputs["reliability"]
+
+        # Ensure degraded_input matches clean_target spatial shape for identity & mask losses if super-resolution
+        if degraded_input.shape[-2:] != clean_target.shape[-2:]:
+            degraded_aligned = F.interpolate(
+                degraded_input,
+                size=clean_target.shape[-2:],
+                mode='bicubic',
+                align_corners=False
+            )
+        else:
+            degraded_aligned = degraded_input
 
         # 1. Charbonnier Reconstruction Loss
         l_char = self.char_loss(restored, clean_target)
@@ -95,10 +106,10 @@ class AIRISLoss(nn.Module):
 
         # 5. Identity / Preservation Loss
         # Region where degraded is already close to clean (< 0.03 diff) should be preserved
-        abs_diff_deg = torch.abs(degraded_input - clean_target)
+        abs_diff_deg = torch.abs(degraded_aligned - clean_target)
         m_gt = torch.clamp(abs_diff_deg * 10.0, 0.0, 1.0)
         preservation_mask = torch.clamp(1.0 - m_gt, 0.0, 1.0)
-        l_identity = torch.mean(preservation_mask * torch.abs(restored - degraded_input))
+        l_identity = torch.mean(preservation_mask * torch.abs(restored - degraded_aligned))
 
         # 6. Restoration Mask Supervision
         m_target = torch.clamp(torch.mean(abs_diff_deg, dim=1, keepdim=True) * 5.0, 0.0, 1.0)
