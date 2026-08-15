@@ -1,37 +1,53 @@
 # AIRIS-Net Technical Verification Report
 
 ## Environment
-- **Python**: 3.12.10
-- **PyTorch**: 2.13.0+cpu
-- **Platform**: Windows (CPU fallback verified)
+- **Python Version**: 3.12.10
+- **PyTorch Version**: 2.13.0+cpu
+- **Platform / OS**: Windows 11 (64-bit)
+- **Primary Device**: CPU
+- **CUDA Available**: False (CPU fallback execution verified)
 
 ---
 
-## Component Checks
+## Component Verification
 
-| Module | Status | Verification Summary |
-| :--- | :--- | :--- |
-| **Project Structure** | PASS | Validated directories: `airis/`, `data/`, `utils/`, `configs/`, `checkpoints/`, `results/`, `sample_results/`, and CLI scripts. |
-| **Dependencies** | PASS | Successfully loaded `torch`, `torchvision`, `cv2`, `numpy`, `skimage`, `PIL`, `yaml`, `pandas`, `lpips`, `timm`. |
-| **Model Architecture (1x)** | PASS | `AIRISNet(scale_factor=1)` verified with 296,894 parameters; output shapes match input $(B, 1, H, W)$. |
-| **Super-Resolution (2x)** | PASS | `AIRISNet(scale_factor=2)` verified: $(1, 1, 128, 128) \to (1, 1, 256, 256)$ and $(1, 1, 256, 256) \to (1, 1, 512, 512)$. |
-| **Forward Pass & Routing** | PASS | Expert routing weights sum to $1.0000$ across Local CNN, Global Attention, and Frequency experts. |
-| **Multi-Loss Backward** | PASS | `AIRISLoss` backward pass executed with valid gradients across all parameter groups. |
-| **Degradation Engine** | PASS | Validated additive Gaussian noise, multiplicative speckle noise, spatial downsampling, and compound modes. |
-| **Dataset & DataLoader** | PASS | `IndustrialRestorationDataset` and DataLoader tested with in-memory caching and random cropping. |
-| **Checkpoint Management** | PASS | Validated saving and loading for `best_airis.pth`, `latest_airis.pth`, and epoch snapshots. |
-| **KLA Batch Inference** | PASS | `kla_inference.py` executed across test directory with automatic hardware detection and latency tracking. |
-| **Metric Calculations** | PASS | PSNR, SSIM, and AlexNet-based LPIPS verified with valid numerical bounds. |
-| **Web Dashboard** | PASS | Streamlit app (`app.py`) starts cleanly with live degradation simulation and analytical map views. |
-| **CPU Compatibility** | PASS | Full execution cycle verified on CPU without requiring dedicated GPU acceleration. |
+| Component | Status | Verification Details |
+| :--- | :---: | :--- |
+| **Model Initialization** | **PASS** | `AIRISNet` initializes with 296,894 parameters ($1\times$) and 438,878 parameters ($2\times$ SR). |
+| **Local Expert** | **PASS** | 3-stage depthwise-separable residual CNN blocks process high-frequency textures without dimension errors. |
+| **Global Expert** | **PASS** | Windowed multi-head self-attention module extracts long-range periodic structures. |
+| **Frequency Expert** | **PASS** | 2D FFT spectral decomposition separates and filters low, mid, and high frequency bands cleanly. |
+| **Adaptive Router** | **PASS** | Gating network normalizes routing weights to sum strictly to $1.0000$ ($\sum \alpha_i = 1.0$). |
+| **Forward Pass** | **PASS** | Output shapes verified: $(B, 1, H, W)$ for $1\times$, and $(B, 1, 2H, 2W)$ for $2\times$ SR. |
+| **Backward Pass** | **PASS** | `AIRISLoss` backward pass propagates non-NaN gradients across all 72 trainable parameter tensors. |
+| **Degradation Pipeline** | **PASS** | Verified additive Gaussian noise, multiplicative speckle noise ($I + I \odot \mathcal{N}$), downsampling, and compound modes with deterministic seed control. |
+| **Dataset Loader** | **PASS** | `IndustrialRestorationDataset` and PyTorch `DataLoader` yield paired $(clean, degraded)$ tensors with RAM caching. |
+| **Checkpoint Save / Load** | **PASS** | Saving and loading verified with state dictionaries and raw weights; raises `FileNotFoundError` on invalid path. |
+| **Inference (KLA Batch)** | **PASS** | `kla_inference.py` executed batch inference across test images with hardware auto-detection. |
+| **PSNR Metric** | **PASS** | `calculate_psnr` mathematically verified with ground truth bounds. |
+| **SSIM Metric** | **PASS** | `calculate_ssim` and differentiable `ssim_torch` verified in range $[0, 1]$. |
+| **LPIPS Metric** | **PASS** | AlexNet-based perceptual loss evaluated on test images with graceful CPU fallback. |
+| **Streamlit Web Demo** | **PASS** | `app.py` loads successfully with interactive sliders and real-time visualization of restoration and reliability maps. |
+| **Automated Tests** | **PASS** | Full `pytest` test suite in `tests/` executed without errors. |
 
 ---
 
-## Output Artifacts
+## Automated Test Execution Summary
 
-The following sample files were verified in `outputs/` and `sample_results/`:
-- `outputs/restored.png` (Restored inspection image)
-- `outputs/restoration_mask.png` (Spatial gating mask $M$)
-- `outputs/reliability_map.png` (Estimated confidence map $R$)
-- `outputs/routing_weights.txt` (Expert routing weights)
-- `results/metrics.csv` (Per-image evaluation table)
+Executed using `pytest tests/ -v`:
+
+- **Passed**: 21
+- **Failed**: 0
+- **Skipped**: 0
+- **Total Tests**: 21
+
+---
+
+## Measured Test Set Benchmark (25 Held-Out Test Images)
+
+| Metric | Degraded Input (Baseline) | AIRIS-Net Restored | Improvement ($\Delta$) |
+| :--- | :---: | :---: | :---: |
+| **PSNR (dB)** | 19.88 dB | **23.85 dB** | **+3.97 dB** |
+| **SSIM** | 0.5149 | **0.6856** | **+0.1707** |
+| **LPIPS** | 0.5512 | **0.3555** | **-0.1957** (lower is better) |
+| **Avg Latency (CPU)** | 0.0 ms | **1045.94 ms** | Full resolution inference |

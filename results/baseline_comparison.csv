@@ -1,0 +1,3 @@
+Method / Model,Evaluation Type,Avg PSNR (dB),Avg SSIM,Avg LPIPS,Latency (ms),Status
+Degraded Input (Baseline),Measured on Test Split,19.88,0.5149,0.5512,0.0,Baseline Reference
+AIRIS-Net (Trained Checkpoint),Measured on Test Split,23.85,0.6856,0.3555,1045.94,"+3.97 dB PSNR, +0.1707 SSIM"
