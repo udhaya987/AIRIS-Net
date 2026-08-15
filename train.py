@@ -13,7 +13,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from airis.model import AIRISNet
 from airis.losses import AIRISLoss
-from data.dataset import create_dataloader, prepare_dataset_splits
+from data.dataset import create_dataloader, prepare_dataset_splits, prepare_real_paired_splits
 from utils.checkpoint import save_checkpoint, load_checkpoint
 from utils.metrics import calculate_psnr, calculate_ssim
 
@@ -68,7 +68,7 @@ def train_one_epoch(
         for k in loss_components_accum:
             loss_components_accum[k] += loss_dict.get(k, 0.0)
 
-        if (step + 1) % 50 == 0 or (step + 1) == num_batches:
+        if (step + 1) % 25 == 0 or (step + 1) == num_batches:
             print(
                 f"  Step [{step+1:3d}/{num_batches:3d}] | "
                 f"Loss: {loss_dict['total']:.4f} "
@@ -135,15 +135,16 @@ def main():
         torch.set_num_threads(os.cpu_count())
 
     parser = argparse.ArgumentParser(description="Train AIRIS-Net for Semiconductor Image Restoration")
-    parser.add_argument("--config", type=str, default="configs/train.yaml", help="Path to config yaml")
+    parser.add_argument("--config", type=str, default="configs/real_train.yaml", help="Path to config yaml")
     parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint to resume from")
     parser.add_argument("--epochs", type=int, default=None, help="Override epoch count")
     parser.add_argument("--batch_size", "--batch-size", dest="batch_size", type=int, default=None, help="Override batch size")
     parser.add_argument("--scale", type=int, default=None, help="Scale factor (1 for denoising, 2 for 2x super-resolution)")
     parser.add_argument("--degradation_mode", type=str, default=None, help="Override degradation mode")
+    parser.add_argument("--paired", action="store_true", help="Force real paired dataset training")
     parser.add_argument("--seed", type=int, default=None, help="Deterministic random seed")
-    parser.add_argument("--max_train_samples", "--max-train-samples", dest="max_train_samples", type=int, default=None, help="Limit train samples for fast smoke testing")
-    parser.add_argument("--max_val_samples", "--max-val-samples", dest="max_val_samples", type=int, default=None, help="Limit val samples for fast smoke testing")
+    parser.add_argument("--max_train_samples", "--max-train-samples", dest="max_train_samples", type=int, default=None, help="Limit train samples for fast training")
+    parser.add_argument("--max_val_samples", "--max-val-samples", dest="max_val_samples", type=int, default=None, help="Limit val samples for fast validation")
     args = parser.parse_args()
 
     # Load configuration
@@ -164,46 +165,85 @@ def main():
     # Override parameters if provided via CLI
     epochs = args.epochs or cfg["training"]["epochs"]
     batch_size = args.batch_size or cfg["training"]["batch_size"]
-    scale_factor = args.scale if args.scale is not None else cfg["model"].get("scale_factor", 1)
+    scale_factor = args.scale if args.scale is not None else cfg["model"].get("scale_factor", 2)
     degradation_mode = args.degradation_mode or cfg["data"].get("degradation_mode", "random")
 
     lr = float(cfg["training"]["learning_rate"])
     weight_decay = float(cfg["training"]["weight_decay"])
-    patch_size = cfg["data"]["patch_size"]
+    patch_size = cfg["data"].get("patch_size", None)
     num_workers = cfg["training"]["num_workers"]
     save_every = cfg["training"]["save_every"]
     validate_every = cfg["training"]["validate_every"]
     gradient_clip = float(cfg["training"]["gradient_clip"])
 
-    # Ensure dataset directories exist
-    prepare_dataset_splits(source_dir="train/train/GT", base_data_dir="data", seed=seed)
+    is_paired_mode = args.paired or cfg["data"].get("mode") == "paired" or "noisy_train_dir" in cfg["data"]
 
-    # Create DataLoaders
-    train_loader = create_dataloader(
-        clean_dir=cfg["data"]["train_dir"],
-        batch_size=batch_size,
-        patch_size=patch_size,
-        scale_factor=scale_factor,
-        is_train=True,
-        grayscale=cfg["data"]["grayscale"],
-        num_workers=num_workers,
-        degradation_mode=degradation_mode,
-        max_samples=args.max_train_samples,
-        seed=seed
-    )
+    if is_paired_mode:
+        print("[AIRIS-Net] Using Real Paired (NoisyLR, GT) Dataset Pipeline.")
+        # Ensure paired dataset directories exist
+        prepare_real_paired_splits(
+            noisy_source_dir="train/train/NoisyLR",
+            gt_source_dir="train/train/GT",
+            base_data_dir="data",
+            seed=seed
+        )
 
-    val_loader = create_dataloader(
-        clean_dir=cfg["data"]["val_dir"],
-        batch_size=batch_size,
-        patch_size=patch_size,
-        scale_factor=scale_factor,
-        is_train=False,
-        grayscale=cfg["data"]["grayscale"],
-        num_workers=num_workers,
-        degradation_mode=degradation_mode,
-        max_samples=args.max_val_samples,
-        seed=seed + 1
-    )
+        train_loader = create_dataloader(
+            noisy_dir=cfg["data"].get("noisy_train_dir", "data/real_train/NoisyLR"),
+            gt_dir=cfg["data"].get("gt_train_dir", "data/real_train/GT"),
+            batch_size=batch_size,
+            patch_size=patch_size,
+            scale_factor=scale_factor,
+            is_train=True,
+            grayscale=cfg["data"].get("grayscale", True),
+            num_workers=num_workers,
+            max_samples=args.max_train_samples,
+            seed=seed,
+            is_paired=True
+        )
+
+        val_loader = create_dataloader(
+            noisy_dir=cfg["data"].get("noisy_val_dir", "data/real_val/NoisyLR"),
+            gt_dir=cfg["data"].get("gt_val_dir", "data/real_val/GT"),
+            batch_size=batch_size,
+            patch_size=patch_size,
+            scale_factor=scale_factor,
+            is_train=False,
+            grayscale=cfg["data"].get("grayscale", True),
+            num_workers=num_workers,
+            max_samples=args.max_val_samples,
+            seed=seed + 1,
+            is_paired=True
+        )
+    else:
+        print("[AIRIS-Net] Using Synthetic Degradation Pipeline.")
+        prepare_dataset_splits(source_dir="train/train/GT", base_data_dir="data", seed=seed)
+
+        train_loader = create_dataloader(
+            clean_dir=cfg["data"]["train_dir"],
+            batch_size=batch_size,
+            patch_size=patch_size or 128,
+            scale_factor=scale_factor,
+            is_train=True,
+            grayscale=cfg["data"]["grayscale"],
+            num_workers=num_workers,
+            degradation_mode=degradation_mode,
+            max_samples=args.max_train_samples,
+            seed=seed
+        )
+
+        val_loader = create_dataloader(
+            clean_dir=cfg["data"]["val_dir"],
+            batch_size=batch_size,
+            patch_size=patch_size or 128,
+            scale_factor=scale_factor,
+            is_train=False,
+            grayscale=cfg["data"]["grayscale"],
+            num_workers=num_workers,
+            degradation_mode=degradation_mode,
+            max_samples=args.max_val_samples,
+            seed=seed + 1
+        )
 
     # Initialize AIRIS-Net
     model_cfg = cfg["model"]
@@ -220,7 +260,7 @@ def main():
     ).to(device)
 
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"[AIRIS-Net] Initialized model with {total_params:,} trainable parameters (scale={scale_factor}).")
+    print(f"[AIRIS-Net] Initialized model with {total_params:,} trainable parameters (scale={scale_factor}x).")
 
     # Initialize Optimizer and Scheduler
     optimizer = AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
@@ -230,9 +270,9 @@ def main():
     loss_cfg = cfg["loss"]
     loss_fn = AIRISLoss(
         w_char=loss_cfg.get("w_char", 1.5),
-        w_edge=loss_cfg.get("w_edge", 0.3),
+        w_edge=loss_cfg.get("w_edge", 0.4),
         w_ssim=loss_cfg.get("w_ssim", 0.8),
-        w_freq=loss_cfg.get("w_freq", 0.1),
+        w_freq=loss_cfg.get("w_freq", 0.15),
         w_identity=loss_cfg.get("w_identity", 0.01),
         w_mask=loss_cfg.get("w_mask", 0.05),
         w_reliability=loss_cfg.get("w_reliability", 0.05),
@@ -249,7 +289,7 @@ def main():
         chk = load_checkpoint(args.resume, model, optimizer, scheduler, device=device)
         start_epoch = chk.get("epoch", 0) + 1
         best_psnr = chk.get("best_psnr", 0.0)
-        best_ssim = chk.get("val_ssim", 0.0)
+        best_ssim = chk.get("best_ssim", chk.get("val_ssim", 0.0))
         best_score = best_ssim * 20.0 + best_psnr
 
     chk_dir = cfg["paths"]["checkpoint_dir"]
@@ -257,7 +297,7 @@ def main():
 
     print("\n" + "=" * 60)
     print(f"Starting AIRIS-Net Training: Epochs {start_epoch} to {epochs}")
-    print(f"Degradation Mode: {degradation_mode} | Scale: {scale_factor}x | Batch Size: {batch_size}")
+    print(f"Dataset Mode: {'Real Paired' if is_paired_mode else 'Synthetic'} | Scale: {scale_factor}x | Batch Size: {batch_size}")
     print("=" * 60)
 
     for epoch in range(start_epoch, epochs + 1):
@@ -301,7 +341,7 @@ def main():
             print(f"Val Loss: {val_loss:.4f} | PSNR: {psnr:.2f} dB | SSIM: {ssim:.4f}")
 
             # Check for best checkpoint
-            is_best = current_score > best_score or ssim > best_ssim
+            is_best = current_score > best_score or ssim > best_ssim or psnr > best_psnr
             if is_best:
                 best_score = max(best_score, current_score)
                 best_psnr = max(best_psnr, psnr)
@@ -322,6 +362,9 @@ def main():
             }
 
             save_checkpoint(state, is_best=is_best, checkpoint_dir=chk_dir, filename=f"airis_epoch_{epoch:03d}.pth")
+            if is_best:
+                # Also save a scale-specific best checkpoint for clarity
+                save_checkpoint(state, is_best=False, checkpoint_dir=chk_dir, filename=f"airis_x{scale_factor}_best.pth")
 
     print("\n" + "=" * 60)
     print(f"Training Complete! Best Validation SSIM: {best_ssim:.4f}, Best PSNR: {best_psnr:.2f} dB")

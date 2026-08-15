@@ -13,6 +13,7 @@ __pycache__/
 checkpoints/airis_epoch_*.pth
 checkpoints/cpu_test.pth
 checkpoints/latest_airis.pth
+checkpoints/airis_x2_best.pth
 
 # Generated Outputs & Temporary Results
 outputs/*
@@ -21,6 +22,7 @@ outputs/sanity_test/*
 sample_results/restored/*
 !sample_results/restored/.gitkeep
 /results.csv
+results/test_restored/
 
 # Semiconductor Datasets & Large Binary Arrays
 data/train/clean/*
@@ -29,6 +31,9 @@ data/val/clean/*
 !data/val/clean/.gitkeep
 data/test/clean/*
 !data/test/clean/.gitkeep
+data/real_train/
+data/real_val/
+data/real_test/
 /train/
 /Test_NoisyLR/
 

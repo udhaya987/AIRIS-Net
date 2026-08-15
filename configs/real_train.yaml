@@ -1,0 +1,58 @@
+# AIRIS-Net Real Paired Semiconductor Restoration Configuration
+# SEMICON / KLA Image Restoration Hackathon
+
+# Model Architecture
+model:
+  in_channels: 1
+  base_channels: 48
+  degradation_dim: 64
+  scale_factor: 2 # 2x Super-Resolution & Denoising (128x128 -> 256x256)
+  use_local_expert: true
+  use_global_expert: true
+  use_frequency_expert: true
+  use_adaptive_routing: true
+  use_integrity_mask: true
+
+# Dataset Pipeline (Real Paired NoisyLR & GT)
+data:
+  mode: "paired"
+  noisy_train_dir: "data/real_train/NoisyLR"
+  gt_train_dir: "data/real_train/GT"
+  noisy_val_dir: "data/real_val/NoisyLR"
+  gt_val_dir: "data/real_val/GT"
+  noisy_test_dir: "data/real_test/NoisyLR"
+  gt_test_dir: "data/real_test/GT"
+  competition_test_dir: "Test_NoisyLR/NoisyLR"
+  patch_size: 128 # 128 for NoisyLR (full 128x128 image)
+  scale_factor: 2 # matches model scale_factor
+  grayscale: true
+  seed: 42
+
+# Training Hyperparameters
+training:
+  epochs: 10
+  batch_size: 16
+  learning_rate: 0.0004
+  weight_decay: 0.00005
+  gradient_clip: 1.0
+  num_workers: 0 # Windows PowerShell stability
+  save_every: 1
+  validate_every: 1
+  seed: 42
+
+# Multi-Objective Loss Weights
+loss:
+  w_char: 1.5
+  w_edge: 0.4
+  w_ssim: 0.8
+  w_freq: 0.15
+  w_identity: 0.01
+  w_mask: 0.05
+  w_reliability: 0.05
+  k_reliability: 10.0
+
+# Storage Paths
+paths:
+  checkpoint_dir: "checkpoints"
+  output_dir: "outputs"
+  results_dir: "results"

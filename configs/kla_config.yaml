@@ -1,0 +1,18 @@
+# KLA / SEMICON Competition Inference Configuration
+model:
+  in_channels: 1
+  base_channels: 48
+  degradation_dim: 64
+  scale_factor: 2
+  use_local_expert: true
+  use_global_expert: true
+  use_frequency_expert: true
+  use_adaptive_routing: true
+  use_integrity_mask: true
+
+inference:
+  checkpoint: "checkpoints/best_airis.pth"
+  input_dir: "Test_NoisyLR/NoisyLR"
+  output_dir: "outputs/test_restored"
+  device: "auto"
+  scale: 2
