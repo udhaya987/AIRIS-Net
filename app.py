@@ -169,7 +169,19 @@ def main():
     # Degradation mode
     deg_mode = st.sidebar.selectbox(
         "Synthetic Degradation",
-        options=["None (Raw Input)", "Gaussian Noise", "Gaussian Blur", "Motion Blur", "Contrast Degradation", "Uneven Illumination", "Mixed Degradation"],
+        options=[
+            "None (Raw Input)",
+            "Gaussian Noise",
+            "Speckle Noise (Multiplicative)",
+            "Resolution Degradation (Downsampling)",
+            "Combined (Gaussian + Speckle)",
+            "Combined (Gaussian + Speckle + Downsample)",
+            "Gaussian Blur",
+            "Motion Blur",
+            "Contrast Degradation",
+            "Uneven Illumination",
+            "Mixed Degradation"
+        ],
         index=1
     )
 
@@ -182,6 +194,16 @@ def main():
     elif deg_mode == "Gaussian Noise":
         noise_sigma = st.sidebar.slider("Noise Sigma (0-50)", 5.0, 50.0, 25.0)
         degraded_img, deg_meta = pipeline.apply_gaussian_noise(clean_img, sigma=noise_sigma)
+    elif deg_mode == "Speckle Noise (Multiplicative)":
+        speckle_var = st.sidebar.slider("Speckle Variance", 0.01, 0.30, 0.08, step=0.01)
+        degraded_img, deg_meta = pipeline.apply_speckle_noise(clean_img, variance=speckle_var)
+    elif deg_mode == "Resolution Degradation (Downsampling)":
+        scale_f = st.sidebar.select_slider("Downsample Factor", options=[2.0, 3.0, 4.0], value=2.0)
+        degraded_img, deg_meta = pipeline.apply_resolution_degradation(clean_img, scale_factor=scale_f, keep_dim=True)
+    elif deg_mode == "Combined (Gaussian + Speckle)":
+        degraded_img, deg_meta = pipeline.apply_combined_degradation(clean_img, mode="gaussian_speckle")
+    elif deg_mode == "Combined (Gaussian + Speckle + Downsample)":
+        degraded_img, deg_meta = pipeline.apply_combined_degradation(clean_img, mode="gaussian_speckle_downsample", scale_factor=2.0)
     elif deg_mode == "Gaussian Blur":
         ksize = st.sidebar.select_slider("Kernel Size", options=[3, 5, 7, 9], value=5)
         sigma = st.sidebar.slider("Blur Sigma", 0.5, 3.0, 1.5)

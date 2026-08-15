@@ -7,6 +7,7 @@ import torch
 import numpy as np
 
 from airis.model import AIRISNet
+from utils.checkpoint import load_checkpoint
 from utils.image_utils import load_image, save_image, to_tensor, to_numpy, compute_change_map
 from utils.metrics import calculate_psnr, calculate_ssim
 from utils.edge_utils import compute_sobel_edges_np
@@ -17,7 +18,12 @@ class AIRISPredictor:
     """
     Inference helper for trained AIRIS-Net models.
     """
-    def __init__(self, checkpoint_path: str = "checkpoints/best_airis.pth", device: str = None):
+    def __init__(
+        self,
+        checkpoint_path: str = "checkpoints/best_airis.pth",
+        device: str = None,
+        scale_override: int = None
+    ):
         if device is None:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
@@ -25,16 +31,27 @@ class AIRISPredictor:
 
         chk_path = Path(checkpoint_path)
         if not chk_path.exists():
-            raise FileNotFoundError(f"Checkpoint not found at: {chk_path}")
+            raise FileNotFoundError(
+                f"Checkpoint not found at: {chk_path.resolve()}.\n"
+                f"Download or train the model before inference."
+            )
 
         print(f"[AIRIS-Net] Loading checkpoint from {chk_path} on {self.device}")
         checkpoint = torch.load(str(chk_path), map_location=self.device)
 
-        cfg = checkpoint.get("config", {}).get("model", {})
+        cfg = {}
+        chk_scale = 1
+        if isinstance(checkpoint, dict):
+            cfg = checkpoint.get("config", {}).get("model", {})
+            chk_scale = checkpoint.get("scale_factor", cfg.get("scale_factor", 1))
+
+        scale_factor = scale_override if scale_override is not None else chk_scale
+
         self.model = AIRISNet(
             in_channels=cfg.get("in_channels", 1),
             base_channels=cfg.get("base_channels", 48),
             degradation_dim=cfg.get("degradation_dim", 64),
+            scale_factor=scale_factor,
             use_local_expert=cfg.get("use_local_expert", True),
             use_global_expert=cfg.get("use_global_expert", True),
             use_frequency_expert=cfg.get("use_frequency_expert", True),
@@ -42,11 +59,10 @@ class AIRISPredictor:
             use_integrity_mask=cfg.get("use_integrity_mask", True)
         )
 
-        state_dict = checkpoint["model_state_dict"] if "model_state_dict" in checkpoint else checkpoint
-        self.model.load_state_dict(state_dict)
+        load_checkpoint(str(chk_path), self.model, device=self.device)
         self.model.eval()
         self.model.to(self.device)
-        print("[AIRIS-Net] Model loaded successfully.")
+        print(f"[AIRIS-Net] Model loaded successfully (scale={scale_factor}x).")
 
     @torch.no_grad()
     def predict(self, img: np.ndarray) -> dict:
@@ -55,12 +71,11 @@ class AIRISPredictor:
         Input: (H, W) or (H, W, C) numpy array in [0, 1].
         """
         img_np = np.squeeze(img).astype(np.float32)
-        h, w = img_np.shape[:2]
 
         tensor_in = to_tensor(img_np, device=self.device)
-        t0 = time.time()
+        t0 = time.perf_counter()
         outputs = self.model(tensor_in)
-        elapsed = time.time() - t0
+        elapsed = time.perf_counter() - t0
 
         restored_np = outputs["restored"].squeeze().cpu().clamp(0.0, 1.0).numpy()
         mask_np = outputs["mask"].squeeze().cpu().clamp(0.0, 1.0).numpy()
@@ -79,10 +94,11 @@ class AIRISPredictor:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="AIRIS-Net Single Image Inference")
+    parser = argparse.ArgumentParser(description="AIRIS-Net Single Image Inference CLI")
     parser.add_argument("--input", type=str, required=True, help="Path to input image (.npy, .png, etc.)")
     parser.add_argument("--checkpoint", type=str, default="checkpoints/best_airis.pth", help="Path to trained checkpoint")
     parser.add_argument("--output_dir", type=str, default="outputs", help="Output directory")
+    parser.add_argument("--scale", type=int, default=None, help="Scale factor override")
     args = parser.parse_args()
 
     out_dir = Path(args.output_dir)
@@ -92,7 +108,7 @@ def main():
     img = load_image(args.input, grayscale=True)
 
     # 2. Run AIRIS-Net inference
-    predictor = AIRISPredictor(checkpoint_path=args.checkpoint)
+    predictor = AIRISPredictor(checkpoint_path=args.checkpoint, scale_override=args.scale)
     res = predictor.predict(img)
 
     # 3. Print Routing Weights
