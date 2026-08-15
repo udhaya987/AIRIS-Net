@@ -9,19 +9,19 @@ __pycache__/
 .pytest_cache/
 .ipynb_checkpoints/
 
-# Model Checkpoints & Pretrained Weights
-checkpoints/*
-!checkpoints/.gitkeep
-*.pth
-*.pt
-*.ckpt
+# Checkpoints Strategy:
+# Lightweight reproducibility checkpoints may be tracked or released via GitHub Releases.
+# Ignore intermediate training checkpoints while tracking best_airis.pth / .gitkeep
+checkpoints/airis_epoch_*.pth
+checkpoints/cpu_test.pth
+checkpoints/latest_airis.pth
 
 # Generated Outputs & Temporary Results
 outputs/*
 !outputs/.gitkeep
-results/*
-!results/.gitkeep
-results.csv
+outputs/sanity_test/*
+sample_results/restored/*
+!sample_results/restored/.gitkeep
 
 # Semiconductor Datasets & Large Binary Arrays
 data/train/clean/*
@@ -32,7 +32,6 @@ data/test/clean/*
 !data/test/clean/.gitkeep
 /train/
 /Test_NoisyLR/
-*.npy
 
 # External / Third-party Baseline Sub-repositories
 SwinIR/
