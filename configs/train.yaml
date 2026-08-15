@@ -1,35 +1,44 @@
 # AIRIS-Net Training Configuration
+# SEMICON/KLA Image Restoration Challenge
 
 # Model Architecture
 model:
   in_channels: 1
   base_channels: 48
   degradation_dim: 64
+  scale_factor: 1 # 1 for same-resolution restoration, 2 for 2x super-resolution
   use_local_expert: true
   use_global_expert: true
   use_frequency_expert: true
   use_adaptive_routing: true
   use_integrity_mask: true
 
-# Dataset
+# Dataset & Degradation Pipeline
 data:
   train_dir: "data/train/clean"
   val_dir: "data/val/clean"
   test_dir: "data/test/clean"
   patch_size: 128
+  scale_factor: 1 # matches model scale_factor
   grayscale: true
+  # Supported degradation modes:
+  # 'random', 'gaussian', 'speckle', 'blur', 'motion_blur', 'contrast',
+  # 'brightness', 'illumination', 'jpeg', 'resolution', 'gaussian_downsample',
+  # 'speckle_downsample', 'gaussian_speckle', 'gaussian_speckle_downsample', 'mixed'
   degradation_mode: "random"
+  seed: 42
 
 # Training Hyperparameters
 training:
-  epochs: 50
+  epochs: 20
   batch_size: 8
   learning_rate: 0.00035
   weight_decay: 0.00005
   gradient_clip: 1.0
-  num_workers: 0 # set to 0 for Windows stability
+  num_workers: 0 # set to 0 for Windows PowerShell stability
   save_every: 2
   validate_every: 1
+  seed: 42
 
 # Loss Weights
 loss:
@@ -42,7 +51,7 @@ loss:
   w_reliability: 0.05
   k_reliability: 10.0
 
-# Paths
+# Storage Paths
 paths:
   checkpoint_dir: "checkpoints"
   output_dir: "outputs"
