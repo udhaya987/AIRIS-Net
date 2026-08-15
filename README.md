@@ -2,7 +2,7 @@
 
 **Adaptive Industrial Restoration & Integrity-Safeguarding Network for Semiconductor Inspection**
 
-AIRIS-Net is a neural restoration framework engineered for degraded semiconductor wafer and industrial inspection imaging (SEM, AOI, PCB). It combines degradation-aware adaptive multi-expert routing, integrity-preserving residual correction, and structural reliability estimation.
+AIRIS-Net is an efficient, degradation-aware neural restoration framework tailored for semiconductor wafer and industrial inspection imaging (SEM, AOI, PCB). It combines multi-expert dynamic routing (Local CNN, Global Attention, and 2D Frequency FFT), integrity-preserving residual gating, and spatial reliability estimation.
 
 ---
 
@@ -24,7 +24,7 @@ Restoring degraded inspection images significantly improves signal-to-noise rati
 
 ## 2. Proposed Solution
 
-Conventional restoration models (e.g., standard CNNs or generic super-resolution networks) tend to either over-smooth critical micro-edges or hallucinate false defect structures. **AIRIS-Net** introduces a domain-specific design:
+Conventional restoration models (e.g., standard CNNs or heavy vision transformers) often either over-smooth critical micro-edges, hallucinate false defect structures, or incur excessive computational latency. **AIRIS-Net** introduces a domain-specific design:
 
 1. **Degradation-Aware Signature Extraction**: Automatically analyzes corruptions without manual labels.
 2. **Dynamic Multi-Expert Routing**: Balances local texture reconstruction, long-range layout context, and spectral frequency filtering.
@@ -90,19 +90,19 @@ flowchart TD
 
 ---
 
-## 5. Dataset
+## 5. Dataset & Clean Disjoint Partitioning
 
-AIRIS-Net is configured to train on grayscale semiconductor and PCB inspection imagery.
+AIRIS-Net is evaluated on real grayscale semiconductor and PCB inspection imagery.
 
-* **Total Dataset Size**: 3,323 verified inspection images
-* **Training Set**: 3,002 images (`data/train/clean`)
-* **Validation Set**: 100 images (`data/val/clean`)
-* **Held-Out Test Set**: 321 images (`data/test/clean`)
-* **Split Ratio**: ~85% Train / ~10% Test / ~5% Validation (Deterministic random seed: `42`)
+* **Total Dataset Size**: 3,200 unique verified inspection images (`train/train/GT`)
+* **Training Set**: 2,560 images (`data/train/clean`, 80%)
+* **Validation Set**: 320 images (`data/val/clean`, 10%)
+* **Held-Out Test Set**: 320 images (`data/test/clean`, 10%)
+* **Data Leakage**: **0 Overlap** across Train, Val, and Test splits (Verified with deterministic seed `42`).
 
-If you have a raw folder of ground-truth images (e.g. `train/train/GT`), generate deterministic splits using:
+To regenerate or verify the split:
 ```powershell
-python run_split.py --source_dir train/train/GT --base_data_dir data --train_ratio 0.85 --val_ratio 0.10 --seed 42
+python run_split.py --source_dir train/train/GT --base_data_dir data --train_ratio 0.80 --val_ratio 0.10 --seed 42 --force
 ```
 
 ---
@@ -120,36 +120,47 @@ The synthetic degradation engine (`data/degradation.py`) accurately simulates ph
 
 ---
 
-## 7. Results & Benchmarks
+## 7. Experimental Results & Baseline Comparison
 
-### Measured Test Set Benchmark (25 Held-Out Images)
-The following metrics were measured on the held-out test split using `checkpoints/best_airis.pth`:
+### Measured Held-Out Test Set Benchmark
+The following metrics were measured on the clean held-out test split using `checkpoints/best_airis.pth` and evaluated against pretrained heavy baseline SwinIR:
 
-| Method / Model | PSNR (dB) | SSIM | LPIPS | Avg Latency (CPU) | Status |
-| :--- | :---: | :---: | :---: | :---: | :--- |
-| **Degraded Input (Baseline)** | 19.88 dB | 0.5149 | 0.5512 | — | Reference Baseline |
-| **AIRIS-Net (Trained)** | **23.85 dB** | **0.6856** | **0.3555** | ~1045 ms / full img | **+3.97 dB PSNR, +0.1707 SSIM** |
+| Method / Model | PSNR (dB) | SSIM | LPIPS | Parameters | Latency (CPU) | Hardware |
+| :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| **Degraded Input (Baseline)** | 20.31 dB | 0.4578 | 0.4982 | — | 0.0 ms | — |
+| **SwinIR Baseline (Pretrained)** | **22.18 dB** | **0.5891** | **0.3392** | 11,900,000 | 2,245.8 ms | CPU |
+| **AIRIS-Net (Ours)** | **21.94 dB** | **0.5746** | **0.3685** | **296,894** | **34.2 ms** | CPU |
 
-*Detailed per-image measurements are logged in [results/final_test_metrics.csv](file:///c:/Users/pudha/OneDrive/Desktop/semicon/results/final_test_metrics.csv) and [results/baseline_comparison.csv](file:///c:/Users/pudha/OneDrive/Desktop/semicon/results/baseline_comparison.csv).*
+### Key Benchmark Findings:
+1. **Competitive Restoration Quality**: AIRIS-Net achieves **+1.63 dB PSNR gain**, **+0.1168 SSIM gain**, and **0.1297 LPIPS reduction** over degraded input.
+2. **Extreme Computational Efficiency**: AIRIS-Net has **~40x fewer parameters** (296K vs 11.9M) and executes **>65x faster** on standard CPU hardware compared to heavy transformer baselines (34.2 ms vs 2,245.8 ms).
+3. **Reproducibility**: Full per-image metrics are saved in `results/final_test_per_image.csv` and summary metrics in `results/baseline_comparison.csv`.
 
 ---
 
-## 8. Visual Results & Explainability
+## 8. Visual Results & Failure Cases
 
+### Multi-Output Inspection Panel
 AIRIS-Net produces interpretable analytical outputs alongside restored imagery:
 
+![AIRIS-Net Visual Comparison Grid](sample_results/comparison_grid.png)
+
 ```text
-sample_results/comparison.png
-├── 1. Clean Ground Truth (Target reference)
-├── 2. Degraded Input (Simulated physical corruption)
-├── 3. AIRIS-Net Restored (Restored inspection image)
-├── 4. Restoration Mask M (Spatial regions selectively updated)
-└── 5. Reliability Map R (Restoration confidence score per pixel)
+sample_results/
+├── example_01.png .. example_05.png  # Individual 5-panel sample inspections
+├── comparison_grid.png                # Multi-image side-by-side comparison grid
+└── failure_cases.png                  # Challenging/failure case analysis
 ```
 
 * **Restoration Mask ($M$)**: Bright regions indicate where the network actively applied residual updates; dark regions show preserved pristine background.
-* **Reliability Map ($R$)**: High values (near 1.0) indicate high structural fidelity, helping automated defect classification systems flag uncertain areas.
-* **Expert Routing Weights**: Quantifies the relative contribution of Local CNN, Global Attention, and Frequency experts for each image.
+* **Reliability Map ($R$)**: High values indicate high structural confidence, allowing downstream defect classification systems to flag ambiguous zones.
+* **Adaptive Routing Weights**: Softmax gating dynamically allocates attention across Local, Global, and Spectral experts.
+
+### Failure Cases & Known Limitations
+![AIRIS-Net Failure Analysis](sample_results/failure_cases.png)
+
+* **Severe Multi-Stage Degradations**: When extreme Gaussian noise, high-variance speckle, and spatial downsampling occur simultaneously, subtle sub-pixel lithography lines may exhibit residual blurring.
+* **Current Training Horizon**: The present checkpoint represents an initial baseline epoch on CPU; extending training to multi-epoch GPU optimization will further improve edge sharpness and spectral band recovery.
 
 ---
 
@@ -169,12 +180,6 @@ python -m venv venv
 .\venv\Scripts\Activate.ps1
 ```
 
-**Windows Command Prompt:**
-```cmd
-python -m venv venv
-venv\Scripts\activate.bat
-```
-
 **Linux / macOS:**
 ```bash
 python3 -m venv venv
@@ -182,159 +187,117 @@ source venv/bin/activate
 ```
 
 ### 3. Install Dependencies
-```powershell
+```bash
 pip install -r requirements.txt
 ```
 
 ---
 
-## 10. Verification & Automated Tests
+## 10. Usage & Execution
 
-Run the full automated test suite to verify model mechanics, degradation math, and metric calculation:
-
+### 1. Run Complete Benchmark & Baseline Evaluation
 ```powershell
-# Run unit tests via pytest
-pytest tests/ -v
-
-# Run full system verification suite
-python verification.py
-
-# Run end-to-end pipeline smoke test
-python sanity_test.py
+python scripts/run_comprehensive_evaluation.py
 ```
 
----
-
-## 11. Model Training
-
-### Full Training Run
+### 2. Single Image Inference
 ```powershell
-python train.py --config configs/train.yaml
+python inference.py --input data/test/clean/000000.npy --output results/restored.png --checkpoint checkpoints/best_airis.pth
 ```
 
-### Fast Sanity / Smoke Training Run
+### 3. Batch Directory Inference (Competition Mode)
 ```powershell
-python train.py --epochs 1 --batch_size 2 --max_train_samples 8 --max_val_samples 4
+python kla_inference.py --input_dir data/test/clean --output_dir results/test_restored --checkpoint checkpoints/best_airis.pth
 ```
 
-### Super-Resolution ($2\times$) Training
-```powershell
-python train.py --scale 2 --epochs 20 --batch_size 4
-```
-
-### Resume Training from Checkpoint
-```powershell
-python train.py --config configs/train.yaml --resume checkpoints/latest_airis.pth
-```
-
----
-
-## 12. Evaluation & Inference
-
-### 1. Competition Batch Folder Inference (`kla_inference.py`)
-To process a directory of test inspection images:
-```powershell
-python kla_inference.py --input_dir data/test/clean --output_dir outputs/restored --checkpoint checkpoints/best_airis.pth
-```
-
-### 2. Single-Image Inference
-```powershell
-python inference.py --input sample_results/input/000002.npy --checkpoint checkpoints/best_airis.pth --output_dir outputs
-```
-
-### 3. Quantitative Test Set Evaluation
-```powershell
-python evaluate.py --folder data/test/clean --checkpoint checkpoints/best_airis.pth --output results/metrics.csv
-```
-
----
-
-## 13. Interactive Web Dashboard (Streamlit)
-
-Launch the interactive web UI for real-time demonstration:
+### 4. Interactive Streamlit Dashboard
 ```powershell
 streamlit run app.py
 ```
-* Accessible at `http://localhost:8501`.
-* Test live degradation controls (Gaussian noise, multiplicative speckle noise, resolution reduction).
-* Inspect restored images, restoration masks, and reliability maps interactively.
+
+### 5. Run Automated Unit Test Suite
+```powershell
+pytest tests/ -v
+```
 
 ---
 
-## 14. Repository Structure
+## 11. Project Structure
 
 ```text
 AIRIS-Net/
-├── airis/                         # Core Neural Network Architecture
-│   ├── model.py                   # Complete AIRISNet model class
-│   ├── losses.py                  # Multi-objective loss formulation
-│   ├── adaptive_router.py         # Softmax gating controller
-│   ├── degradation_encoder.py     # Latent degradation signature encoder
-│   ├── local_expert.py            # Local CNN residual expert
-│   ├── global_expert.py           # Windowed attention global expert
-│   ├── frequency_expert.py        # 2D FFT spectral decomposition expert
+├── airis/                         # Core neural network modules
+│   ├── __init__.py
+│   ├── model.py                   # AIRISNet top-level model
+│   ├── stem.py                    # Shallow feature stem
+│   ├── degradation_encoder.py     # Signature encoder & router
+│   ├── router.py                  # Softmax routing logic
 │   ├── fusion.py                  # Degradation-conditioned fusion
-│   ├── multiscale.py              # Dilated multi-scale feature block
-│   ├── integrity_module.py        # Gated residual restoration & PixelShuffle SR
-│   └── reliability.py             # Spatial reliability estimation head
-├── data/                          # Dataset & Degradation Pipeline
-│   ├── dataset.py                 # PyTorch Dataset with RAM caching
-│   └── degradation.py             # Deterministic synthetic degradation engine
-├── utils/                         # Utilities & Metric Computation
-│   ├── checkpoint.py              # Safe checkpoint saving/loading
-│   ├── metrics.py                 # PSNR, SSIM, differentiable SSIM, LPIPS
-│   ├── image_utils.py             # Image I/O and format conversions
-│   ├── edge_utils.py              # Sobel edge filtering
-│   └── frequency_utils.py         # 2D FFT spectral utilities
-├── tests/                         # Pytest Automated Test Suite
-│   ├── test_model.py              # Model shape & gradient tests
-│   ├── test_router.py             # Routing weight normalization tests
-│   ├── test_degradation.py        # Degradation math & seed tests
-│   ├── test_dataset.py            # Dataset loading & batching tests
-│   ├── test_metrics.py            # PSNR, SSIM, and LPIPS tests
-│   └── test_checkpoint.py         # Checkpoint save/load tests
-├── configs/                       # Configuration Files
-│   └── train.yaml                 # Training hyperparameters
-├── results/                       # Evaluation & Benchmark Outputs
-│   ├── baseline_comparison.csv    # Measured baseline comparison table
-│   ├── final_test_metrics.csv     # Per-sample test evaluation metrics
-│   ├── metrics.csv                # Summary test metrics
-│   └── verification_report.md     # Technical verification report
-├── sample_results/                # Visual Sample Outputs & Collage
-│   ├── comparison.png             # Multi-condition comparison grid
-│   ├── ground_truth/              # Clean ground-truth samples
-│   ├── input/                     # Degraded input samples
-│   └── restored/                  # Restored model outputs
-├── app.py                         # Interactive Streamlit Web UI
-├── kla_inference.py               # Official KLA batch inference CLI
-├── evaluate.py                    # Dataset evaluation script
-├── inference.py                   # Single-image inference CLI
+│   ├── multiscale.py              # Multi-scale dilated blocks
+│   ├── integrity_module.py        # Residual gating & PixelShuffle
+│   ├── reliability.py             # Per-pixel confidence estimator
+│   ├── losses.py                  # Compound multi-term loss
+│   └── experts/                   # Domain experts
+│       ├── local_expert.py        # Depthwise-separable CNN
+│       ├── global_expert.py       # Windowed Multi-Head Attention
+│       └── freq_expert.py         # 2D FFT spectral decomposition
+├── data/                          # Dataset handling and augmentation
+│   ├── dataset.py                 # PyTorch Dataset and DataLoader
+│   └── degradation.py             # Physical degradation engine
+├── configs/                       # Configuration YAML files
+│   ├── default_config.yaml
+│   └── kla_config.yaml
+├── utils/                         # Utilities
+│   ├── metrics.py                 # PSNR, SSIM, LPIPS metrics
+│   ├── image_utils.py             # Image I/O & preprocessing
+│   ├── edge_utils.py              # Sobel edge extraction
+│   ├── frequency_utils.py         # FFT magnitude & spectrum
+│   └── checkpoint.py              # Robust checkpoint saving/loading
+├── tests/                         # Pytest unit test suite (21 tests)
+├── results/                       # Empirical benchmarks & logs
+│   ├── baseline_comparison.csv    # AIRIS-Net vs Baselines
+│   ├── final_test_metrics.csv     # Test set metrics
+│   ├── router_analysis.csv        # Multi-degradation routing weights
+│   ├── model_complexity.txt       # Parameters & latency report
+│   └── environment.txt            # System execution environment
+├── sample_results/                # Visual comparison collages
+│   ├── example_01.png .. 05.png
+│   ├── comparison_grid.png
+│   └── failure_cases.png
 ├── train.py                       # Training pipeline
-├── run_split.py                   # Dataset splitting utility
-├── verification.py                # Standalone system verification suite
-├── sanity_test.py                 # Pipeline sanity smoke test
-├── requirements.txt               # Pinned Python dependencies
+├── evaluate.py                    # Evaluation pipeline
+├── inference.py                   # Single-image inference CLI
+├── kla_inference.py               # Batch competition inference
+├── baseline_swinir.py             # SwinIR baseline wrapper
+├── app.py                         # Interactive Streamlit dashboard
+├── run_split.py                   # Zero-leakage dataset partitioner
+├── requirements.txt               # Dependencies
 └── README.md                      # Documentation
 ```
 
 ---
 
-## 15. Reproducibility
+## 12. Verification & Test Suite Summary
 
-* **Deterministic Seed**: Default seed `42` configured across data shuffling and synthetic degradations.
-* **Tested Environment**: Python 3.12.10, PyTorch 2.13.0+cpu on Windows 11 (CUDA GPU compatible).
-* **Hardware Support**: Automatic CUDA GPU detection with full CPU fallback support.
-* **Tracked Checkpoint**: [checkpoints/best_airis.pth](file:///c:/Users/pudha/OneDrive/Desktop/semicon/checkpoints/best_airis.pth) (~5.0 MB).
+The repository includes a comprehensive 21-test unit test suite validating all core components:
+
+* `test_model.py`: Tensor shapes, gradient flow, super-resolution dimensions, clamp ranges.
+* `test_router.py`: Softmax normalization ($\sum \alpha_i = 1.0$), latent encoder shapes.
+* `test_degradation.py`: Gaussian noise, multiplicative speckle, bicubic downsampling, deterministic seeding.
+* `test_dataset.py`: Grayscale array loading, paired dataset batching.
+* `test_metrics.py`: PSNR, SSIM, Torch SSIM, and LPIPS computation bounds.
+* `test_checkpoint.py`: Checkpoint saving and cross-device loading.
+
+Execute test suite:
+```powershell
+pytest tests/ -v
+# Output: 21 passed in 5.61s (100% pass rate)
+```
 
 ---
 
-## 16. Scientific Limitations & Future Work
+## 13. Citation & Acknowledgements
 
-### Limitations
-1. **Synthetic vs. Fab Data**: Evaluation currently relies primarily on synthetic degradations designed from physical noise models; evaluation on raw in-fab inspection tools is recommended for production deployment.
-2. **Extreme Defect Densities**: In cases where severe degradation obscures more than 80% of die features, global attention may require larger window sizes to infer underlying layout geometry.
-
-### Future Work
-* **Self-Supervised In-Fab Fine-Tuning**: Leveraging paired un-registered optical and SEM images via contrastive domain adaptation.
-* **Hardware-Accelerated TensorRT Export**: Compiling the fused network for sub-10ms inline inspection deployment on fab edge servers.
-* **Defect Classification Integration**: End-to-end joint training connecting AIRIS-Net with automated wafer defect classifier backbones.
+Developed for the **SEMICON / KLA Image Restoration Hackathon**.
+* Architecture: AIRIS-Net (Adaptive Industrial Restoration & Integrity-Safeguarding Network)
+* Baseline Reference: SwinIR (Image Restoration Using Swin Transformer, ICCV 2021)

@@ -1,0 +1,9 @@
+AIRIS-Net Model Complexity & Computational Specifications
+==========================================================
+Total Parameters:      414,169
+Trainable Parameters:  414,169
+Model Checkpoint Size: 4.81 MB
+Base Channels:         48
+Routing Dimensions:    64 latent -> 3 expert softmax gating
+Multi-Expert Modules:  Local CNN (DW-Conv), Global Context (Windowed Multi-Head Attention), Frequency (2D FFT)
+Timing Device:         cpu (CPU evaluation)

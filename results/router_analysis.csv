@@ -1,0 +1,14 @@
+image,degradation,local_weight,global_weight,frequency_weight,sum_weights
+000002.npy,Clean Input,0.3085,0.3411,0.3504,1.0
+000002.npy,"Gaussian Noise (Low, s=15)",0.3085,0.3411,0.3504,1.0
+000002.npy,"Gaussian Noise (High, s=40)",0.3085,0.341,0.3505,1.0
+000002.npy,"Speckle Noise (Low, v=0.04)",0.3085,0.3411,0.3504,1.0
+000002.npy,"Speckle Noise (High, v=0.15)",0.3085,0.3411,0.3504,1.0
+000002.npy,Gaussian Blur (k=5),0.3085,0.3411,0.3505,1.0
+000002.npy,"Motion Blur (len=7, ang=45)",0.3085,0.3411,0.3505,1.0
+000002.npy,Contrast Degradation (f=0.4),0.3085,0.3405,0.351,1.0
+000002.npy,Resolution Downsampling (2x),0.3085,0.3411,0.3504,1.0
+000002.npy,Combined: Gaussian + Speckle,0.3085,0.341,0.3505,1.0
+000002.npy,Combined: Gaussian + Downsample,0.3085,0.3411,0.3504,1.0
+000002.npy,Combined: Gaussian + Speckle + Downsample,0.3085,0.3411,0.3504,1.0
+000002.npy,Mixed Multi-Stage Degradation,0.3085,0.3406,0.3509,1.0

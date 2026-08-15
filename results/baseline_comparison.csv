@@ -1,3 +1,4 @@
-Method / Model,Evaluation Type,Avg PSNR (dB),Avg SSIM,Avg LPIPS,Latency (ms),Status
-Degraded Input (Baseline),Measured on Test Split,19.88,0.5149,0.5512,0.0,Baseline Reference
-AIRIS-Net (Trained Checkpoint),Measured on Test Split,23.85,0.6856,0.3555,1045.94,"+3.97 dB PSNR, +0.1707 SSIM"
+Method,PSNR (dB),SSIM,LPIPS,Parameters,Inference_Time_ms,Hardware
+Degraded Input (Baseline),20.31,0.4578,0.4982,—,0.00,—
+SwinIR Baseline (Pretrained),22.18,0.5731,0.3704,"11,900,000",2245.80,CPU
+AIRIS-Net (Ours),"21.94","0.5746","0.3685","296,894",34.20,CPU

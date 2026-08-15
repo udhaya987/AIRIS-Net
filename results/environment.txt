@@ -1,0 +1,11 @@
+AIRIS-Net Execution Environment
+================================
+OS:                 Windows 11 (10.0.26200)
+Architecture:       AMD64 (Intel64 Family 6 Model 170 Stepping 4, GenuineIntel)
+Python Version:     3.12.10
+PyTorch Version:    2.13.0+cpu
+CUDA Available:     False
+Primary Device:     cpu
+AIRIS-Net Params:   414,169 (4.81 MB)
+SwinIR Params:      11,497,681
+Timestamp:          2026-08-15 12:37:36

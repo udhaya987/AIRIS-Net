@@ -193,13 +193,14 @@ def create_dataloader(
 def prepare_dataset_splits(
     source_dir: Union[str, Path] = "train/train/GT",
     base_data_dir: Union[str, Path] = "data",
-    train_ratio: float = 0.85,
+    train_ratio: float = 0.80,
     val_ratio: float = 0.10,
-    seed: int = 42
+    seed: int = 42,
+    force: bool = False
 ) -> Tuple[Path, Path, Path]:
     """
     Create standard data/train/clean, data/val/clean, data/test/clean directories
-    and populate with semiconductor GT files if available.
+    and populate with semiconductor GT files without train/val/test leakage.
     """
     source_path = Path(source_dir)
     base_path = Path(base_data_dir)
@@ -212,10 +213,16 @@ def prepare_dataset_splits(
     val_clean.mkdir(parents=True, exist_ok=True)
     test_clean.mkdir(parents=True, exist_ok=True)
 
-    # Check if already populated
+    # If already partitioned and not forcing, check for leakage
     train_existing = list(train_clean.glob("*.npy")) + list(train_clean.glob("*.png"))
-    if len(train_existing) > 10:
-        return train_clean, val_clean, test_clean
+    if len(train_existing) > 10 and not force:
+        val_existing = list(val_clean.glob("*.npy")) + list(val_clean.glob("*.png"))
+        test_existing = list(test_clean.glob("*.npy")) + list(test_clean.glob("*.png"))
+        set_tr = set(p.name for p in train_existing)
+        set_va = set(p.name for p in val_existing)
+        set_te = set(p.name for p in test_existing)
+        if len(set_tr & set_va) == 0 and len(set_tr & set_te) == 0 and len(set_va & set_te) == 0:
+            return train_clean, val_clean, test_clean
 
     # Look for GT files in potential source locations
     possible_sources = [
@@ -234,6 +241,13 @@ def prepare_dataset_splits(
     if not files:
         return train_clean, val_clean, test_clean
 
+    # Clean existing destination directories to prevent leakage
+    import shutil
+    for d in [train_clean, val_clean, test_clean]:
+        for existing_file in d.glob("*.*"):
+            if existing_file.is_file() and existing_file.name != ".gitkeep":
+                existing_file.unlink()
+
     random.seed(seed)
     shuffled = files.copy()
     random.shuffle(shuffled)
@@ -246,20 +260,13 @@ def prepare_dataset_splits(
     val_files = shuffled[n_train:n_train + n_val]
     test_files = shuffled[n_train + n_val:]
 
-    import shutil
     for f in train_files:
-        dest = train_clean / f.name
-        if not dest.exists():
-            shutil.copy2(f, dest)
+        shutil.copy2(f, train_clean / f.name)
 
     for f in val_files:
-        dest = val_clean / f.name
-        if not dest.exists():
-            shutil.copy2(f, dest)
+        shutil.copy2(f, val_clean / f.name)
 
     for f in test_files:
-        dest = test_clean / f.name
-        if not dest.exists():
-            shutil.copy2(f, dest)
+        shutil.copy2(f, test_clean / f.name)
 
     return train_clean, val_clean, test_clean
